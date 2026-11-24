@@ -41,6 +41,16 @@ voice is ever involved in a broadcast.
 
 ## Install
 
+### Via HACS (recommended)
+
+1. In HACS: **Menu → Custom → Custom Repositories → + Add** and
+   enter `heyitsbcs/ha-voicebroadcast`, category *Integration*.
+2. Find **Voice Broadcast** under *Custom → Integrations* and click
+   **Download**.
+3. Restart Home Assistant.
+
+### Manual
+
 1. Copy the `custom_components/voicebroadcast` folder into your
    Home Assistant `config` directory:
    `config/custom_components/voicebroadcast/`
@@ -145,3 +155,7 @@ browser.
 - **Multiple pipelines.** Set up a *separate* Voice Broadcast instance
   per pipeline if you need different trigger words or targets per
   device (upstream + trigger word determine the entry's identity).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
