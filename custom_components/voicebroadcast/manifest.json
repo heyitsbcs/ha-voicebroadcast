@@ -1,0 +1,11 @@
+{
+  "domain": "voicebroadcast",
+  "name": "Voice Broadcast",
+  "version": "0.1.0",
+  "documentation": "https://github.com/bcs/ha-voicebroadcast",
+  "codeowners": ["bcs"],
+  "config_flow": true,
+  "dependencies": ["conversation", "media_player", "stt"],
+  "platforms": ["conversation", "media_source", "stt"],
+  "iot_class": "local_push"
+}

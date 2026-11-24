@@ -1,0 +1,199 @@
+"""The Voice Broadcast integration.
+
+Lets you say "broadcast <message>" to Assist and hear your own voice on
+the other media players, instead of a TTS robot re-reading your words.
+
+The integration ships:
+
+- a transparent STT router (the pipeline's STT engine). It forwards every
+  utterance to the upstream STT engine and passes the transcript through
+  unchanged. When the first word of the transcript is the trigger word, it
+  also saves the utterance audio (minus the trigger word) as a WAV file,
+  fires ``voicebroadcast.recorded`` and, optionally, broadcasts it.
+- a conversation agent that stays silent on trigger-word utterances (so no
+  robot reply) and delegates everything else to the default agent.
+- a media source exposing the recordings, plus ``voicebroadcast.broadcast``
+  and ``voicebroadcast.clear`` services.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
+import voluptuous as vol
+from aiohttp import web
+
+from homeassistant.components.http import HomeAssistantView
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_extract_entity_ids
+from homeassistant.helpers.typing import ConfigType
+
+from . import broadcast as broadcast_helper
+from . import recorder
+from .const import (
+    CONF_ALIASES,
+    CONF_AUTO_BROADCAST,
+    CONF_DUCK_VOLUME,
+    CONF_KEEP_HOURS,
+    CONF_KEYWORD,
+    CONF_LANGUAGES,
+    CONF_MAX_DURATION,
+    CONF_OUTPUT_DIR,
+    CONF_TARGETS,
+    CONF_UPSTREAM,
+    DEFAULT_AUTO_BROADCAST,
+    DEFAULT_DUCK_VOLUME,
+    DEFAULT_KEEP_HOURS,
+    DEFAULT_KEYWORD,
+    DEFAULT_LANGUAGES,
+    DEFAULT_MAX_DURATION,
+    DEFAULT_OUTPUT_DIR,
+    DOMAIN,
+    MEDIA_VIEW_URL,
+    SERVICE_BROADCAST,
+    SERVICE_CLEAR,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = vol.Schema(
+    {vol.Optional(DOMAIN): vol.Schema({})}, extra=vol.ALLOW_EXTRA
+)
+
+SERVICE_BROADCAST_SCHEMA = vol.Schema(
+    {
+        vol.Optional("media_source_id"): cv.string,
+        vol.Optional("url"): cv.string,
+        vol.Optional("volume"): cv.coerce_float,
+    }
+)
+
+SERVICE_CLEAR_SCHEMA = vol.Schema({})
+
+
+class BroadcastMediaView(HomeAssistantView):
+    """Serve recorded WAV files to media players (unguessable ULID names)."""
+
+    url = MEDIA_VIEW_URL
+    name = "api:voicebroadcast"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize the view."""
+        self.hass = hass
+
+    async def get(self, request, filename: str):
+        """Return a WAV file."""
+        if not filename.endswith(".wav") or "/" in filename:
+            return web.Response(status=404)
+        for cfg in self.hass.data.get(DOMAIN, {}).values():
+            path = Path(cfg[CONF_OUTPUT_DIR]) / filename
+            if path.is_file():
+                return web.Response(body=path.read_bytes(), content_type="audio/wav")
+        return web.Response(status=404)
+
+
+def entry_config(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
+    """Merge entry data with defaults and derive paths."""
+    data = dict(entry.data)
+    config: dict[str, Any] = {
+        CONF_UPSTREAM: data[CONF_UPSTREAM],
+        CONF_KEYWORD: data.get(CONF_KEYWORD, DEFAULT_KEYWORD),
+        CONF_ALIASES: data.get(CONF_ALIASES, []),
+        CONF_OUTPUT_DIR: str(Path(hass.config.path(data.get(CONF_OUTPUT_DIR, DEFAULT_OUTPUT_DIR)))),
+        CONF_AUTO_BROADCAST: data.get(CONF_AUTO_BROADCAST, DEFAULT_AUTO_BROADCAST),
+        CONF_TARGETS: data.get(CONF_TARGETS, []),
+        CONF_DUCK_VOLUME: data.get(CONF_DUCK_VOLUME, DEFAULT_DUCK_VOLUME),
+        CONF_MAX_DURATION: data.get(CONF_MAX_DURATION, DEFAULT_MAX_DURATION),
+        CONF_KEEP_HOURS: data.get(CONF_KEEP_HOURS, DEFAULT_KEEP_HOURS),
+        CONF_LANGUAGES: data.get(CONF_LANGUAGES, DEFAULT_LANGUAGES),
+        "keywords": recorder.keyword_set(
+            data.get(CONF_KEYWORD, DEFAULT_KEYWORD), data.get(CONF_ALIASES, [])
+        ),
+        "entry_id": entry.entry_id,
+    }
+    Path(config[CONF_OUTPUT_DIR]).mkdir(parents=True, exist_ok=True)
+    return config
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the integration (config entries only)."""
+    hass.data.setdefault(DOMAIN, {})
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Voice Broadcast from a config entry."""
+    config = entry_config(hass, entry)
+    hass.data[DOMAIN][entry.entry_id] = config
+
+    if not any(cfg.get("view_registered") for cfg in hass.data[DOMAIN].values()):
+        hass.http.register_view(BroadcastMediaView(hass))
+        config["view_registered"] = True
+
+    async def _async_handle_broadcast(call: ServiceCall) -> None:
+        entity_ids = await async_extract_entity_ids(
+            hass, call, entity_domain="media_player"
+        )
+        media_source_id = call.data.get("media_source_id")
+        url = call.data.get("url")
+        if not media_source_id and not url:
+            raise HomeAssistantError(
+                "voicebroadcast.broadcast requires media_source_id or url"
+            )
+        await broadcast_helper.async_broadcast(
+            hass,
+            config,
+            media_source_id=media_source_id,
+            url=url,
+            volume=call.data.get("volume"),
+            entity_ids=entity_ids or None,
+        )
+
+    async def _async_handle_clear(call: ServiceCall) -> None:
+        count = await recorder.async_clear_recordings(
+            hass, Path(config[CONF_OUTPUT_DIR])
+        )
+        _LOGGER.info("Cleared %d broadcast recording(s)", count)
+
+    if not hass.services.has_service(DOMAIN, SERVICE_BROADCAST):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_BROADCAST,
+            _async_handle_broadcast,
+            schema=SERVICE_BROADCAST_SCHEMA,
+        )
+        hass.services.async_register(
+            DOMAIN, SERVICE_CLEAR, _async_handle_clear, schema=SERVICE_CLEAR_SCHEMA
+        )
+
+    await hass.config_entries.async_forward_entry_setups(
+        entry, [Platform.STT, Platform.CONVERSATION]
+    )
+    _LOGGER.info("Voice Broadcast set up (keyword: %s)", config[CONF_KEYWORD])
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    if await hass.config_entries.async_unload_platforms(
+        entry, [Platform.STT, Platform.CONVERSATION]
+    ):
+        del hass.data[DOMAIN][entry.entry_id]
+        if not hass.data[DOMAIN]:
+            hass.data.pop(DOMAIN, None)
+            hass.services.async_remove(DOMAIN, SERVICE_BROADCAST)
+            hass.services.async_remove(DOMAIN, SERVICE_CLEAR)
+        return True
+    return False
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old entries."""
+    return True

@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Voice Broadcast",
+        "description": "Say \"broadcast <message>\" to Assist and hear your own voice on other media players, instead of a TTS robot. All other voice commands pass through unchanged.",
+        "data": {
+          "upstream": "Upstream speech-to-text engine",
+          "keyword": "Trigger word",
+          "aliases": "Extra trigger words (comma separated)",
+          "output_dir": "Recording folder (relative to the config directory, or absolute)",
+          "auto_broadcast": "Broadcast automatically when a recording is made",
+          "targets": "Broadcast targets (empty = all media players)",
+          "duck_volume": "Duck volume during broadcast (0-1)",
+          "max_duration": "Max recording duration in seconds",
+          "keep_hours": "Delete recordings older than (hours)",
+          "languages": "Languages (comma separated)"
+        }
+      }
+    },
+    "error": {
+      "upstream_not_found": "The selected speech-to-text entity does not exist or is not set up."
+    }
+  }
+}

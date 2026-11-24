@@ -1,0 +1,22 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+
+# Python packaging
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+
+# HA generated recordings at dev time (if someone drops the folder here)
+recordings/
+*.wav
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

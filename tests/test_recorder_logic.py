@@ -1,0 +1,139 @@
+"""Logic test for the Voice Broadcast keyword-cut / trim / save functions.
+
+Runs without a Home Assistant install (stubs the few HA helpers that
+recorder.py imports):
+
+    python3 tests/test_recorder_logic.py
+"""
+
+import math
+import os
+import struct
+import sys
+import tempfile
+import time
+import types
+import wave
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _stub_homeassistant() -> None:
+    ha = types.ModuleType("homeassistant")
+    core = types.ModuleType("homeassistant.core")
+
+    class _HomeAssistant:
+        """Placeholder."""
+
+    core.HomeAssistant = _HomeAssistant
+    util = types.ModuleType("homeassistant.util")
+    dt = types.ModuleType("homeassistant.util.dt")
+    ulid = types.ModuleType("homeassistant.util.ulid")
+    dt.now = lambda: datetime.now()
+    dt.utcnow = lambda: datetime.now(timezone.utc)
+
+    class _Counter:
+        n = 0
+
+    def _new_ulid():
+        _Counter.n += 1
+        return f"TESTULID{_Counter.n}"
+
+    ulid.new_ulid = _new_ulid
+    util.dt = dt
+    util.ulid = ulid
+    ha.core = core
+    ha.util = util
+    sys.modules.update(
+        {
+            "homeassistant": ha,
+            "homeassistant.core": core,
+            "homeassistant.util": util,
+            "homeassistant.util.dt": dt,
+            "homeassistant.util.ulid": ulid,
+        }
+    )
+
+
+def _load_recorder():
+    pkg = types.ModuleType("voicebroadcast")
+    pkg.__path__ = [str(ROOT / "custom_components" / "voicebroadcast")]
+    sys.modules["voicebroadcast"] = pkg
+    import importlib
+
+    return importlib.import_module("voicebroadcast.recorder")
+
+
+SR = 16000
+
+
+def tone(freq: float, seconds: float, vol: float = 0.5) -> bytes:
+    return b"".join(
+        struct.pack("<h", int(vol * 32767 * math.sin(2 * math.pi * freq * i / SR)))
+        for i in range(int(SR * seconds))
+    )
+
+
+def silence(seconds: float) -> bytes:
+    return b"\x00\x00" * int(SR * seconds)
+
+
+def main() -> None:
+    _stub_homeassistant()
+    recorder = _load_recorder()
+
+    # "broadcast" (0.8s tone) + 0.4s pause + message (2.0s tone) + 0.5s tail
+    pcm = tone(440, 0.8) + silence(0.4) + tone(660, 2.0) + silence(0.5)
+    cut_s = recorder.find_cut_offset(pcm, SR) / SR / 2
+    assert 0.3 <= cut_s <= 1.3, f"cut at {cut_s:.3f}s"
+    print(f"cut offset: {cut_s:.3f}s (pause starts at 0.800s)")
+
+    dur = len(recorder.trim_message(pcm[recorder.find_cut_offset(pcm, SR):], SR)) / SR / 2
+    assert 1.9 <= dur <= 2.4, f"message duration {dur:.3f}s"
+    print(f"message duration: {dur:.3f}s (tone: 2.0s)")
+
+    pcm2 = tone(440, 0.8) + silence(0.6)
+    cut2 = recorder.find_cut_offset(pcm2, SR)
+    dur2 = len(recorder.trim_message(pcm2[cut2:], SR)) / SR / 2
+    assert dur2 < recorder.MIN_MESSAGE_SECONDS
+    print(f"keyword-only: {dur2:.3f}s -> discarded (min {recorder.MIN_MESSAGE_SECONDS}s)")
+
+    pcm3 = tone(440, 0.7) + tone(660, 2.0)
+    cut3_s = recorder.find_cut_offset(pcm3, SR) / SR / 2
+    assert cut3_s == recorder._FALLBACK_CUT_S
+    print(f"no-pause fallback: cut at {cut3_s:.3f}s")
+
+    assert recorder.is_broadcast("Broadcast dinner is ready", {"broadcast"})
+    assert recorder.is_broadcast("broadcast, dinner is ready", {"broadcast"})
+    assert not recorder.is_broadcast("play the broadcast album", {"broadcast"})
+    assert not recorder.is_broadcast("", {"broadcast"})
+    assert recorder.first_word("  Broadcast! ") == "broadcast"
+    assert recorder.first_word("turn on the light") == "turn"
+    print("keyword detection + first_word: OK")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        out_dir = Path(tmp)
+        rec = recorder._save_sync(out_dir, pcm, SR, 24)
+        assert rec is not None
+        with wave.open(str(rec.path), "rb") as w:
+            assert abs(w.getnframes() / w.getframerate() - rec.duration) < 0.01
+            assert w.getsampwidth() == 2 and w.getnchannels() == 1
+        assert len(recorder.directory_files(out_dir)) == 1
+        old = out_dir / "old.wav"
+        with wave.open(str(old), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(SR)
+            w.writeframes(silence(0.5))
+        os.utime(old, (time.time() - 48 * 3600, time.time() - 48 * 3600))
+        recorder._cleanup_sync(out_dir, 24)
+        assert not old.exists() and rec.path.exists()
+        print(f"save/read/cleanup: OK ({rec.file}, {rec.duration:.2f}s)")
+
+    print("\nALL TESTS PASSED")
+
+
+if __name__ == "__main__":
+    main()
