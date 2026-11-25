@@ -73,8 +73,11 @@ def _energy_profile(pcm: bytes, sample_rate: int) -> list[float]:
     """Return RMS per 10 ms window, downsampled for speed."""
     total_windows = max(1, int((len(pcm) / SAMPLE_WIDTH / sample_rate) * (1000 / _WINDOW_MS)))
     step = max(1, sample_rate // 2000)
+    downsampled = pcm[::step]
+    if len(downsampled) % 2:
+        downsampled = downsampled[:-1]
     samples = array("h")
-    samples.frombytes(pcm[::step])
+    samples.frombytes(downsampled)
     per_window = max(1, len(samples) // total_windows)
     profile: list[float] = []
     for i in range(0, len(samples), per_window):
@@ -158,7 +161,7 @@ def _save_sync(
         _LOGGER.debug("Broadcast recording discarded: message too short (%.2fs)", duration)
         return None
 
-    filename = f"{dt_util.now():%Y%m%d-%H%M%S}-{ulid_util.new_ulid()}.wav"
+    filename = f"{dt_util.now():%Y%m%d-%H%M%S}-{ulid_util.ulid()}.wav"
     path = directory / filename
     with wave.open(str(path), "wb") as wav_file:
         wav_file.setnchannels(1)

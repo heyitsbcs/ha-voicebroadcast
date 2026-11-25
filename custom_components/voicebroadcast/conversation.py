@@ -52,8 +52,12 @@ class VoiceBroadcastAgent(conversation.ConversationEntity):
 
         if text and recorder.is_broadcast(text, self.config["keywords"]):
             _LOGGER.debug("Broadcast utterance: staying silent")
+            # Empty speech dict -> the pipeline skips the TTS stage
+            # entirely, so the satellite stays silent.
             return conversation.ConversationResult(
-                response=intent.IntentResponse(speech=None),
+                response=intent.IntentResponse(
+                    language=user_input.language or "en"
+                ),
                 conversation_id=user_input.conversation_id,
             )
 

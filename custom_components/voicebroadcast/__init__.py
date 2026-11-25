@@ -70,7 +70,7 @@ SERVICE_BROADCAST_SCHEMA = vol.Schema(
     {
         vol.Optional("media_source_id"): cv.string,
         vol.Optional("url"): cv.string,
-        vol.Optional("volume"): cv.coerce_float,
+        vol.Optional("volume"): vol.Coerce(float),
     }
 )
 

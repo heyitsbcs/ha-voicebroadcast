@@ -37,11 +37,11 @@ def _stub_homeassistant() -> None:
     class _Counter:
         n = 0
 
-    def _new_ulid():
+    def _ulid():
         _Counter.n += 1
         return f"TESTULID{_Counter.n}"
 
-    ulid.new_ulid = _new_ulid
+    ulid.ulid = _ulid
     util.dt = dt
     util.ulid = ulid
     ha.core = core
@@ -112,6 +112,13 @@ def main() -> None:
     assert recorder.first_word("  Broadcast! ") == "broadcast"
     assert recorder.first_word("turn on the light") == "turn"
     print("keyword detection + first_word: OK")
+
+    # odd-length PCM (truncated stream) must not crash the energy profile
+    odd_pcm = pcm[: len(pcm) - 1]
+    recorder._energy_profile(odd_pcm, SR)
+    cut_odd = recorder.find_cut_offset(odd_pcm, SR)
+    assert cut_odd % 2 == 0
+    print("odd-length PCM: OK")
 
     with tempfile.TemporaryDirectory() as tmp:
         out_dir = Path(tmp)

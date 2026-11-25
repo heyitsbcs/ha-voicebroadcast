@@ -92,7 +92,6 @@ class VoiceBroadcastSTT(stt.SpeechToTextEntity):
         """Return the supported sample rates."""
         return [
             stt.AudioSampleRates.SAMPLERATE_16000,
-            stt.AudioSampleRates.SAMPLERATE_22050,
             stt.AudioSampleRates.SAMPLERATE_44100,
             stt.AudioSampleRates.SAMPLERATE_48000,
         ]

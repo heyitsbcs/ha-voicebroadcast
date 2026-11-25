@@ -70,7 +70,7 @@ class VoiceBroadcastConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            upstream = user_input[CONF_UPSTREAM]["entity_id"]
+            upstream = user_input[CONF_UPSTREAM]
             stt_entity = stt.async_get_speech_to_text_entity(self.hass, upstream)
             if stt_entity is None:
                 errors["base"] = "upstream_not_found"
@@ -89,10 +89,7 @@ class VoiceBroadcastConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_OUTPUT_DIR: user_input[CONF_OUTPUT_DIR].strip()
                     or DEFAULT_OUTPUT_DIR,
                     CONF_AUTO_BROADCAST: user_input[CONF_AUTO_BROADCAST],
-                    CONF_TARGETS: [
-                        target["entity_id"]
-                        for target in (user_input[CONF_TARGETS] or [])
-                    ],
+                    CONF_TARGETS: list(user_input.get(CONF_TARGETS) or []),
                     CONF_DUCK_VOLUME: user_input[CONF_DUCK_VOLUME],
                     CONF_MAX_DURATION: user_input[CONF_MAX_DURATION],
                     CONF_KEEP_HOURS: user_input[CONF_KEEP_HOURS],
