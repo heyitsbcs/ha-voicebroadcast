@@ -10,8 +10,9 @@ The integration ships:
   unchanged. When the first word of the transcript is the trigger word, it
   also saves the utterance audio (minus the trigger word) as a WAV file,
   fires ``voicebroadcast.recorded`` and, optionally, broadcasts it.
-- a conversation agent that stays silent on trigger-word utterances (so no
-  robot reply) and delegates everything else to the default agent.
+- a conversation agent that answers trigger-word utterances with a short
+  confirmation (default "Sent.") instead of a long robot reply, and
+  delegates everything else to the default agent.
 - a media source exposing the recordings, plus ``voicebroadcast.broadcast``
   and ``voicebroadcast.clear`` services.
 """
@@ -39,8 +40,11 @@ from . import recorder
 from .const import (
     CONF_ALIASES,
     CONF_AUTO_BROADCAST,
+    CONF_CONFIRM,
     CONF_DUCK_VOLUME,
     CONF_KEEP_HOURS,
+    CONF_PREANNOUNCE,
+    CONF_SATELLITES,
     CONF_KEYWORD,
     CONF_LANGUAGES,
     CONF_MAX_DURATION,
@@ -48,8 +52,10 @@ from .const import (
     CONF_TARGETS,
     CONF_UPSTREAM,
     DEFAULT_AUTO_BROADCAST,
+    DEFAULT_CONFIRM,
     DEFAULT_DUCK_VOLUME,
     DEFAULT_KEEP_HOURS,
+    DEFAULT_PREANNOUNCE,
     DEFAULT_KEYWORD,
     DEFAULT_LANGUAGES,
     DEFAULT_MAX_DURATION,
@@ -109,6 +115,9 @@ def entry_config(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
         CONF_OUTPUT_DIR: str(Path(hass.config.path(data.get(CONF_OUTPUT_DIR, DEFAULT_OUTPUT_DIR)))),
         CONF_AUTO_BROADCAST: data.get(CONF_AUTO_BROADCAST, DEFAULT_AUTO_BROADCAST),
         CONF_TARGETS: data.get(CONF_TARGETS, []),
+        CONF_CONFIRM: data.get(CONF_CONFIRM, DEFAULT_CONFIRM),
+        CONF_SATELLITES: data.get(CONF_SATELLITES, []),
+        CONF_PREANNOUNCE: data.get(CONF_PREANNOUNCE, DEFAULT_PREANNOUNCE),
         CONF_DUCK_VOLUME: data.get(CONF_DUCK_VOLUME, DEFAULT_DUCK_VOLUME),
         CONF_MAX_DURATION: data.get(CONF_MAX_DURATION, DEFAULT_MAX_DURATION),
         CONF_KEEP_HOURS: data.get(CONF_KEEP_HOURS, DEFAULT_KEEP_HOURS),
@@ -138,9 +147,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config["view_registered"] = True
 
     async def _async_handle_broadcast(call: ServiceCall) -> None:
-        entity_ids = await async_extract_entity_ids(
-            hass, call, entity_domain="media_player"
-        )
+        entity_ids = {
+            entity_id
+            for entity_id in await async_extract_entity_ids(call)
+            if entity_id.startswith("media_player.")
+        }
         media_source_id = call.data.get("media_source_id")
         url = call.data.get("url")
         if not media_source_id and not url:
@@ -153,7 +164,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             media_source_id=media_source_id,
             url=url,
             volume=call.data.get("volume"),
-            entity_ids=entity_ids or None,
+            entity_ids=list(entity_ids) or None,
         )
 
     async def _async_handle_clear(call: ServiceCall) -> None:

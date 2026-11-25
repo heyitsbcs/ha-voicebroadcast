@@ -14,7 +14,15 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import event
 
 from . import recorder
-from .const import CONF_DUCK_VOLUME, CONF_OUTPUT_DIR, CONF_TARGETS, DOMAIN
+from .const import (
+    CONF_DUCK_VOLUME,
+    CONF_OUTPUT_DIR,
+    CONF_PREANNOUNCE,
+    CONF_SATELLITES,
+    CONF_TARGETS,
+    DOMAIN,
+    SATELLITE_DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,11 +38,13 @@ async def async_broadcast(
     volume: float | None = None,
     entity_ids: list[str] | None = None,
 ) -> list[str]:
-    """Play a recording on the target media players.
+    """Play a recording on the target media players and satellites.
 
     Players that support MEDIA_ANNOUNCE get a native announce (music is
     paused and resumed by the player itself). Everything else gets a
-    volume duck with restore.
+    volume duck with restore. Voice satellites (assist_satellite) get a
+    native announcement with the recording as media_id, optionally
+    preceded by their chime.
     """
     if media_source_id:
         content_id = media_source_id
@@ -84,6 +94,47 @@ async def async_broadcast(
         if was_playing and not supports_announce:
             _schedule_volume_restore(hass, player_id, old_volume, content_id, config)
 
+    played.extend(
+        await _announce_satellites(hass, config, content_id)
+    )
+
+    return played
+
+
+async def _announce_satellites(
+    hass: HomeAssistant,
+    config: dict[str, Any],
+    content_id: str,
+) -> list[str]:
+    """Announce the recording on voice satellites via assist_satellite.announce."""
+    if not hass.services.has_service(SATELLITE_DOMAIN, "announce"):
+        return []
+
+    satellite_ids = config.get(CONF_SATELLITES) or hass.states.async_entity_ids(
+        SATELLITE_DOMAIN
+    )
+    played: list[str] = []
+    for satellite_id in satellite_ids:
+        state = hass.states.get(satellite_id)
+        if state is None or state.state == "unavailable":
+            _LOGGER.debug("Skipping satellite %s: unavailable", satellite_id)
+            continue
+        supported = state.attributes.get("supported_features", 0) or 0
+        # AssistSatelliteEntityFeature.ANNOUNCE == 1
+        if not supported & 1:
+            _LOGGER.debug("Skipping satellite %s: no announce support", satellite_id)
+            continue
+        await hass.services.async_call(
+            SATELLITE_DOMAIN,
+            "announce",
+            {
+                "entity_id": satellite_id,
+                "media_id": content_id,
+                "preannounce": config.get(CONF_PREANNOUNCE, True),
+            },
+            blocking=True,
+        )
+        played.append(satellite_id)
     return played
 
 

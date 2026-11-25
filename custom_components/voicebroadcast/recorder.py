@@ -3,8 +3,10 @@
 The pipeline hands us a stream of 16-bit mono PCM (the pipeline's VAD
 already trims the stream to the spoken command). The upstream STT engine
 only returns text without word timestamps, so the leading trigger word is
-stripped with a small energy detector: the first sustained silence gap
-after a minimum word length marks the end of the keyword.
+stripped with a small energy detector: the first significant dip after a
+minimum lead-in marks the end of the keyword. If the speaker leaves no
+gap at all, the quietest window shortly after the keyword is used
+instead.
 """
 
 from __future__ import annotations
@@ -29,9 +31,13 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _WINDOW_MS = 10
-_SILENCE_RUN = 8  # consecutive quiet windows (80 ms) end the keyword
-_MIN_CUT_MS = 300  # never cut inside the first 300 ms
+_SILENCE_RUN = 3  # consecutive low-energy windows (30 ms) end the keyword
+_MIN_CUT_MS = 400  # never cut inside the first 400 ms (mid-syllable)
 _MAX_SCAN_S = 3.0
+_GATE_RATIO = 0.30  # a dip below 30% of the loudest window is a boundary
+_LOCAL_MIN_MIN_MS = 400  # fallback: quietest window in this span...
+_LOCAL_MIN_MAX_MS = 1500
+_LOCAL_MIN_RATIO = 0.60  # ...below 60% of the peak
 _FALLBACK_CUT_S = 0.75
 _KEEP_LEADING_MS = 120
 _KEEP_TRAILING_MS = 250
@@ -71,17 +77,17 @@ def is_broadcast(text: str, keywords: set[str]) -> bool:
 
 def _energy_profile(pcm: bytes, sample_rate: int) -> list[float]:
     """Return RMS per 10 ms window, downsampled for speed."""
+    if len(pcm) % 2:
+        pcm = pcm[:-1]
     total_windows = max(1, int((len(pcm) / SAMPLE_WIDTH / sample_rate) * (1000 / _WINDOW_MS)))
     step = max(1, sample_rate // 2000)
-    downsampled = pcm[::step]
-    if len(downsampled) % 2:
-        downsampled = downsampled[:-1]
     samples = array("h")
-    samples.frombytes(downsampled)
-    per_window = max(1, len(samples) // total_windows)
+    samples.frombytes(pcm)
+    downsampled = samples[::step]
+    per_window = max(1, len(downsampled) // total_windows)
     profile: list[float] = []
-    for i in range(0, len(samples), per_window):
-        chunk = samples[i : i + per_window]
+    for i in range(0, len(downsampled), per_window):
+        chunk = downsampled[i : i + per_window]
         if not chunk:
             continue
         profile.append((sum(s * s for s in chunk) / len(chunk)) ** 0.5)
@@ -99,7 +105,8 @@ def find_cut_offset(pcm: bytes, sample_rate: int) -> int:
     profile = _energy_profile(pcm, sample_rate)
     if not profile or max(profile) < _ABS_GATE:
         return 0
-    gate = _gate(profile)
+    peak = max(profile)
+    gate = max(_ABS_GATE, peak * _GATE_RATIO)
     windows_per_second = 1000 // _WINDOW_MS
     min_index = int(_MIN_CUT_MS / _WINDOW_MS)
     max_index = int(min(_MAX_SCAN_S, len(pcm) / SAMPLE_WIDTH / sample_rate) * windows_per_second)
@@ -112,6 +119,15 @@ def find_cut_offset(pcm: bytes, sample_rate: int) -> int:
                 return int(cut_seconds * sample_rate) * SAMPLE_WIDTH
         else:
             run = 0
+
+    # No clear gap: cut at the quietest window shortly after the keyword.
+    lo = int(_LOCAL_MIN_MIN_MS / _WINDOW_MS)
+    hi = min(int(_LOCAL_MIN_MAX_MS / _WINDOW_MS), len(profile))
+    if hi > lo:
+        best = lo + min(range(hi - lo), key=lambda i: profile[i])
+        if profile[best] < peak * _LOCAL_MIN_RATIO:
+            cut_seconds = best * _WINDOW_MS / 1000
+            return int(cut_seconds * sample_rate) * SAMPLE_WIDTH
     return int(_FALLBACK_CUT_S * sample_rate) * SAMPLE_WIDTH
 
 

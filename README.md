@@ -28,11 +28,12 @@ satellites, ESPHome satellites, the browser Assist panel, etc.
         │                          auto-broadcast
         ▼
   Voice Broadcast Assistant (conversation agent)
-        ├── "broadcast ..." ─► silent (no robot reply)
+        ├── "broadcast ..." ─► short confirmation (default "Sent.")
         └── anything else ───► delegated to the default HA agent
         ▼
   Media players
         ├── Sonos / Squeezebox / B&O  ─► native announce (pause + resume)
+        ├── Voice satellites           ─► announce with the recording
         └── everything else            ─► volume duck → play → restore
 ```
 
@@ -75,6 +76,12 @@ existing HA APIs.
      (recommended).
    - **Broadcast targets** — specific media players, or leave empty for
      all of them.
+   - **Voice satellites** — specific `assist_satellite` entities to
+     announce on, or leave empty for all of them.
+   - **Confirmation** — the short phrase spoken on the source satellite
+     after a broadcast (default `Sent.`; leave empty for silence).
+   - **Chime before satellite announcement** — play the satellite's
+     preannounce chime before the recording (on by default).
    - **Duck volume** — volume set while the announcement plays on
      players that don't support native announce (default `0.3`).
    - **Max recording duration** / **Delete recordings older than** —
@@ -82,8 +89,14 @@ existing HA APIs.
 3. Open **Settings → Voice & Talk → Assist pipeline** (the one your
    satellite uses):
    - **Speech-to-text**: select **Voice Broadcast**
-   - **Assistant**: select **Voice Broadcast Assistant**
+   - **Assistant** (agent): select **Voice Broadcast Assistant**
    - Leave **Text-to-speech** as it was.
+
+   ⚠️ **Both must be set, on the pipeline each satellite actually uses.**
+   Each satellite can run its *own* pipeline: if your satellite is
+   assigned a different pipeline, set both here on *that* pipeline too.
+   Without the agent, the satellite answers your broadcast with a robot
+   TTS reply instead of just "Sent.".
 
 That's it. Every device on that pipeline now supports broadcasts; all
 other commands behave exactly as before.
@@ -92,16 +105,19 @@ other commands behave exactly as before.
 
 > "Okay Nabu, **broadcast** — dinner is at seven, don't be late!"
 
-- You hear nothing back from the satellite (silent confirmation; the
-  recording is played on the other players).
+- You hear a short **"Sent."** from the source satellite (configurable
+  or silent); the recording itself plays on the other media players and
+  voice satellites.
 - The trigger word is stripped from the recording with an energy-based
-  cut (first sustained silence after the word), then leading/trailing
-  silence is trimmed.
+  cut (the first significant energy dip after the word; if you leave no
+  gap, the quietest point right after the word is used), then
+  leading/trailing silence is trimmed.
 
 ### Manual / scripted broadcast
 
 The `voicebroadcast.broadcast` service plays any media source or URL on
-any media player (with announce support or ducking):
+any media player (with announce support or ducking) and any voice
+satellite (native announce with the recording as media):
 
 ```yaml
 service: voicebroadcast.broadcast
@@ -145,7 +161,10 @@ browser.
 - **Announce support.** Only players with the `MEDIA_ANNOUNCE` feature
   (Sonos, Squeezebox, B&O, …) get pause-and-resume. Everything else gets
   ducked volume, restored when playback ends (state listener + a
-  duration-based fallback timer).
+  duration-based fallback timer). Voice satellites are announced via
+  `assist_satellite.announce` (HA 2026.11+ removed satellites from the
+  media player domain); they play the recording directly and, by
+  default, their chime before it.
 - **Quality.** The recording is whatever your satellite's mic captured,
   processed by the pipeline's audio enhancements — great for "your
   voice", not studio quality.

@@ -13,21 +13,26 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_ALIASES,
     CONF_AUTO_BROADCAST,
+    CONF_CONFIRM,
     CONF_DUCK_VOLUME,
     CONF_KEEP_HOURS,
     CONF_KEYWORD,
     CONF_LANGUAGES,
     CONF_MAX_DURATION,
     CONF_OUTPUT_DIR,
+    CONF_PREANNOUNCE,
+    CONF_SATELLITES,
     CONF_TARGETS,
     CONF_UPSTREAM,
     DEFAULT_AUTO_BROADCAST,
+    DEFAULT_CONFIRM,
     DEFAULT_DUCK_VOLUME,
     DEFAULT_KEEP_HOURS,
     DEFAULT_KEYWORD,
     DEFAULT_LANGUAGES,
     DEFAULT_MAX_DURATION,
     DEFAULT_OUTPUT_DIR,
+    DEFAULT_PREANNOUNCE,
     DOMAIN,
 )
 
@@ -44,12 +49,20 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_ALIASES, default=""): str,
         vol.Optional(CONF_OUTPUT_DIR, default=DEFAULT_OUTPUT_DIR): str,
         vol.Optional(CONF_AUTO_BROADCAST, default=DEFAULT_AUTO_BROADCAST): bool,
+        vol.Optional(CONF_CONFIRM, default=DEFAULT_CONFIRM): str,
         vol.Optional(CONF_TARGETS): selector.EntitySelector(
             selector.EntitySelectorConfig(
                 domain="media_player",
                 multiple=True,
             )
         ),
+        vol.Optional(CONF_SATELLITES): selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain="assist_satellite",
+                multiple=True,
+            )
+        ),
+        vol.Optional(CONF_PREANNOUNCE, default=DEFAULT_PREANNOUNCE): bool,
         vol.Optional(CONF_DUCK_VOLUME, default=DEFAULT_DUCK_VOLUME): vol.Coerce(float),
         vol.Optional(CONF_MAX_DURATION, default=DEFAULT_MAX_DURATION): vol.Coerce(int),
         vol.Optional(CONF_KEEP_HOURS, default=DEFAULT_KEEP_HOURS): vol.Coerce(int),
@@ -89,7 +102,10 @@ class VoiceBroadcastConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_OUTPUT_DIR: user_input[CONF_OUTPUT_DIR].strip()
                     or DEFAULT_OUTPUT_DIR,
                     CONF_AUTO_BROADCAST: user_input[CONF_AUTO_BROADCAST],
+                    CONF_CONFIRM: user_input[CONF_CONFIRM].strip(),
                     CONF_TARGETS: list(user_input.get(CONF_TARGETS) or []),
+                    CONF_SATELLITES: list(user_input.get(CONF_SATELLITES) or []),
+                    CONF_PREANNOUNCE: user_input[CONF_PREANNOUNCE],
                     CONF_DUCK_VOLUME: user_input[CONF_DUCK_VOLUME],
                     CONF_MAX_DURATION: user_input[CONF_MAX_DURATION],
                     CONF_KEEP_HOURS: user_input[CONF_KEEP_HOURS],

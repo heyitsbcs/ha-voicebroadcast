@@ -1,10 +1,11 @@
-"""Conversation agent: silent on broadcasts, transparent otherwise.
+"""Conversation agent: short confirmation on broadcasts, transparent otherwise.
 
 This agent is selected as the pipeline's conversation agent. Utterances
-that start with the trigger word get an empty response (so no robot
-reply is spoken); everything else is delegated to the built-in
-Home Assistant agent, which keeps all normal voice commands working
-exactly as before.
+that start with the trigger word get a short spoken confirmation (by
+default "Sent." — set an empty confirmation to stay fully silent) so
+no long robot reply is spoken; everything else is delegated to the
+built-in Home Assistant agent, which keeps all normal voice commands
+working exactly as before.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from homeassistant.helpers import intent
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import recorder
-from .const import DOMAIN
+from .const import CONF_CONFIRM, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,13 +52,17 @@ class VoiceBroadcastAgent(conversation.ConversationEntity):
         text = (user_input.text or "").strip()
 
         if text and recorder.is_broadcast(text, self.config["keywords"]):
-            _LOGGER.debug("Broadcast utterance: staying silent")
-            # Empty speech dict -> the pipeline skips the TTS stage
-            # entirely, so the satellite stays silent.
+            _LOGGER.debug("Broadcast utterance: confirming")
+            response = intent.IntentResponse(
+                language=user_input.language or "en"
+            )
+            confirm = self.config.get(CONF_CONFIRM, "").strip()
+            if confirm:
+                # Short spoken confirmation; an empty confirmation keeps
+                # the response silent (the pipeline skips TTS entirely).
+                response.async_set_speech(confirm)
             return conversation.ConversationResult(
-                response=intent.IntentResponse(
-                    language=user_input.language or "en"
-                ),
+                response=response,
                 conversation_id=user_input.conversation_id,
             )
 

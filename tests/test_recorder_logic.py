@@ -100,10 +100,23 @@ def main() -> None:
     assert dur2 < recorder.MIN_MESSAGE_SECONDS
     print(f"keyword-only: {dur2:.3f}s -> discarded (min {recorder.MIN_MESSAGE_SECONDS}s)")
 
-    pcm3 = tone(440, 0.7) + tone(660, 2.0)
+    # continuous tone, no gap anywhere -> local-min/fallback cut
+    pcm3 = tone(440, 2.7)
     cut3_s = recorder.find_cut_offset(pcm3, SR) / SR / 2
-    assert cut3_s == recorder._FALLBACK_CUT_S
+    assert cut3_s == recorder._FALLBACK_CUT_S, f"fallback at {cut3_s:.3f}s"
     print(f"no-pause fallback: cut at {cut3_s:.3f}s")
+
+    # very short 40 ms gap right after the keyword -> cut at the gap
+    pcm4 = tone(440, 0.7) + silence(0.04) + tone(660, 2.0)
+    cut4_s = recorder.find_cut_offset(pcm4, SR) / SR / 2
+    assert 0.65 <= cut4_s <= 0.78, f"short-gap cut at {cut4_s:.3f}s"
+    print(f"short-gap (40ms): cut at {cut4_s:.3f}s")
+
+    # no silence, but a low-energy breath dip after the keyword
+    pcm5 = tone(440, 0.7) + tone(660, 0.15, vol=0.03) + tone(660, 2.0)
+    cut5_s = recorder.find_cut_offset(pcm5, SR) / SR / 2
+    assert 0.65 <= cut5_s <= 0.78, f"breath-dip cut at {cut5_s:.3f}s"
+    print(f"breath dip: cut at {cut5_s:.3f}s")
 
     assert recorder.is_broadcast("Broadcast dinner is ready", {"broadcast"})
     assert recorder.is_broadcast("broadcast, dinner is ready", {"broadcast"})
