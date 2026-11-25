@@ -75,17 +75,23 @@ def _build_schema(current: dict[str, object]) -> vol.Schema:
                 CONF_AUTO_BROADCAST,
                 default=bool(current.get(CONF_AUTO_BROADCAST, DEFAULT_AUTO_BROADCAST)),
             ): bool,
-            vol.Optional(CONF_AGENT): selector.ConversationAgentSelector(),
+            vol.Optional(
+                CONF_AGENT, default=current.get(CONF_AGENT) or None
+            ): selector.ConversationAgentSelector(),
             vol.Optional(
                 CONF_CONFIRM, default=str(current.get(CONF_CONFIRM, DEFAULT_CONFIRM))
             ): str,
-            vol.Optional(CONF_TARGETS): selector.EntitySelector(
+            vol.Optional(
+                CONF_TARGETS, default=list(current.get(CONF_TARGETS) or [])
+            ): selector.EntitySelector(
                 selector.EntitySelectorConfig(
                     domain="media_player",
                     multiple=True,
                 )
             ),
-            vol.Optional(CONF_SATELLITES): selector.EntitySelector(
+            vol.Optional(
+                CONF_SATELLITES, default=list(current.get(CONF_SATELLITES) or [])
+            ): selector.EntitySelector(
                 selector.EntitySelectorConfig(
                     domain="assist_satellite",
                     multiple=True,
@@ -183,6 +189,26 @@ class VoiceBroadcastConfigFlow(ConfigFlow, domain=DOMAIN):
         return VoiceBroadcastOptionsFlow(config_entry)
 
 
+def _suggested_values(current: dict[str, object]) -> dict[str, object]:
+    """Current values, shaped the way the form displays them."""
+    return {
+        CONF_UPSTREAM: current.get(CONF_UPSTREAM),
+        CONF_KEYWORD: str(current.get(CONF_KEYWORD, DEFAULT_KEYWORD)),
+        CONF_ALIASES: _as_text(current.get(CONF_ALIASES)),
+        CONF_OUTPUT_DIR: str(current.get(CONF_OUTPUT_DIR, DEFAULT_OUTPUT_DIR)),
+        CONF_AUTO_BROADCAST: bool(current.get(CONF_AUTO_BROADCAST, DEFAULT_AUTO_BROADCAST)),
+        CONF_AGENT: current.get(CONF_AGENT),
+        CONF_CONFIRM: str(current.get(CONF_CONFIRM, DEFAULT_CONFIRM)),
+        CONF_TARGETS: list(current.get(CONF_TARGETS) or []),
+        CONF_SATELLITES: list(current.get(CONF_SATELLITES) or []),
+        CONF_PREANNOUNCE: bool(current.get(CONF_PREANNOUNCE, DEFAULT_PREANNOUNCE)),
+        CONF_DUCK_VOLUME: current.get(CONF_DUCK_VOLUME, DEFAULT_DUCK_VOLUME),
+        CONF_MAX_DURATION: current.get(CONF_MAX_DURATION, DEFAULT_MAX_DURATION),
+        CONF_KEEP_HOURS: current.get(CONF_KEEP_HOURS, DEFAULT_KEEP_HOURS),
+        CONF_LANGUAGES: _as_text(current.get(CONF_LANGUAGES, DEFAULT_LANGUAGES)),
+    }
+
+
 class VoiceBroadcastOptionsFlow(OptionsFlow):
     """Edit the settings of an existing Voice Broadcast entry."""
 
@@ -198,6 +224,10 @@ class VoiceBroadcastOptionsFlow(OptionsFlow):
 
         current: dict[str, object] = dict(self._entry.data)
         current.update(self._entry.options or {})
+        suggested = _suggested_values(current)
         return self.async_show_form(
-            step_id="init", data_schema=_build_schema(current)
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                _build_schema(current), suggested
+            ),
         )
