@@ -42,13 +42,20 @@ voice is ever involved in a broadcast.
 
 ## Install
 
-### Via HACS (recommended)
+### Via Marketplace (recommended)
 
-1. In HACS: **Menu → Custom → Custom Repositories → + Add** and
-   enter `heyitsbcs/ha-voicebroadcast`, category *Integration*.
-2. Find **Voice Broadcast** under *Custom → Integrations* and click
-   **Download**.
-3. Restart Home Assistant.
+1. Open **Settings → Marketplace** and click **Add from link** (top of
+   the page).
+2. Paste the **GitHub link** `https://github.com/heyitsbcs/ha-voicebroadcast`
+   and pick *Integration* as what it adds. Home Assistant will ask you
+   to connect your GitHub account once.
+3. Find **Voice Broadcast** in the Marketplace and install it.
+4. Restart Home Assistant.
+
+*On older Home Assistant versions the Marketplace is called **HACS**:
+Menu → Custom → Custom Repositories → + Add, enter
+`heyitsbcs/ha-voicebroadcast`, category *Integration*, then
+Custom → Integrations → **Voice Broadcast** → Download.*
 
 ### Manual
 
