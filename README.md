@@ -93,17 +93,18 @@ existing HA APIs.
      players that don't support native announce (default `0.3`).
    - **Max recording duration** / **Delete recordings older than** —
      sane defaults provided.
-3. Open **Settings → Voice assistants → Assist pipeline** (the one your
-   satellite uses):
+3. In **Settings → Voice assistants → Assistants**, open the pipeline
+   (assistant) your satellite uses from the **Assist** list:
    - **Speech-to-text**: select **Voice Broadcast**
-   - **Assistant** (agent): select **Voice Broadcast Assistant**
+   - **Conversation agent**: select **Voice Broadcast Assistant**
    - Leave **Text-to-speech** as it was.
 
    ⚠️ **Both must be set, on the pipeline each satellite actually uses.**
-   Each satellite can run its *own* pipeline: if your satellite is
-   assigned a different pipeline, set both here on *that* pipeline too.
-   Without the agent, the satellite answers your broadcast with a robot
-   TTS reply instead of just "Sent.".
+   Each satellite can run its *own* pipeline — which one is selected on
+   the satellite's device page (Settings → Devices → the satellite →
+   *Assistant*). If your satellite runs a different pipeline, set both
+   fields on *that* pipeline instead. Without the agent, the satellite
+   answers your broadcast with a robot TTS reply instead of just "Sent.".
 
 That's it. Every device on that pipeline now supports broadcasts; all
 other commands behave exactly as before — they go to the assistant you
