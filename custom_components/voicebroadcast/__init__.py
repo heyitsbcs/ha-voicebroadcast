@@ -63,6 +63,7 @@ from .const import (
     DEFAULT_OUTPUT_DIR,
     DOMAIN,
     MEDIA_VIEW_URL,
+    SATELLITE_DOMAIN,
     SERVICE_BROADCAST,
     SERVICE_CLEAR,
 )
@@ -162,10 +163,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config["view_registered"] = True
 
     async def _async_handle_broadcast(call: ServiceCall) -> None:
+        # Explicit targets override the configured lists; both media
+        # players and voice satellites may be targeted.
         entity_ids = {
             entity_id
             for entity_id in await async_extract_entity_ids(call)
             if entity_id.startswith("media_player.")
+            or entity_id.startswith(SATELLITE_DOMAIN + ".")
         }
         media_source_id = call.data.get("media_source_id")
         url = call.data.get("url")

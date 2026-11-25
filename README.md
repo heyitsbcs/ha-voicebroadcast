@@ -79,10 +79,16 @@ existing HA APIs.
      `voicebroadcast` under the config directory).
    - **Broadcast automatically** — play new recordings immediately
      (recommended).
-   - **Broadcast targets** — specific media players, or leave empty for
-     all of them.
-   - **Voice satellites** — specific `assist_satellite` entities to
-     announce on, or leave empty for all of them.
+   - **Broadcast targets** and **Voice satellites** — these two lists
+     together define where broadcasts go:
+
+     - list the media players and/or satellites you want —
+       **only the listed devices** receive the broadcast;
+     - leave **both** empty — every media player and satellite in
+       your house receives it.
+
+     A device that exists as both (e.g. ESPHome) plays only once, via
+     the satellite route.
    - **Confirmation** — the short phrase spoken on the source satellite
      after a broadcast (default `Sent.`; leave empty for silence).
    - **Chime before satellite announcement** — play the satellite's

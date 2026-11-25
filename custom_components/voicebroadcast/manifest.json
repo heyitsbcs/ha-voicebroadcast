@@ -1,7 +1,7 @@
 {
     "domain": "voicebroadcast",
     "name": "Voice Broadcast",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "documentation": "https://github.com/heyitsbcs/ha-voicebroadcast",
     "codeowners": [
         "heyitsbcs"

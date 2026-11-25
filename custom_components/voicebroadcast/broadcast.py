@@ -11,7 +11,7 @@ from homeassistant.components.media_player import (
     MediaPlayerState,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import event
+from homeassistant.helpers import entity_registry as er_helper, event
 
 from . import recorder
 from .const import (
@@ -38,13 +38,17 @@ async def async_broadcast(
     volume: float | None = None,
     entity_ids: list[str] | None = None,
 ) -> list[str]:
-    """Play a recording on the target media players and satellites.
+    """Play a recording on the configured (or explicitly given) targets.
 
     Players that support MEDIA_ANNOUNCE get a native announce (music is
     paused and resumed by the player itself). Everything else gets a
     volume duck with restore. Voice satellites (assist_satellite) get a
     native announcement with the recording as media_id, optionally
     preceded by their chime.
+
+    `entity_ids` (mixed media_player.* / assist_satellite.*) override
+    the configured lists; a device that exists in both domains plays
+    only once.
     """
     if media_source_id:
         content_id = media_source_id
@@ -53,13 +57,10 @@ async def async_broadcast(
     else:
         return []
 
-    if not entity_ids:
-        entity_ids = config.get(CONF_TARGETS) or hass.states.async_entity_ids(
-            "media_player"
-        )
+    player_ids, satellite_ids = _resolve_targets(hass, config, entity_ids)
 
     played: list[str] = []
-    for player_id in entity_ids:
+    for player_id in player_ids:
         state = hass.states.get(player_id)
         if state is None or state.state == "unavailable":
             _LOGGER.debug("Skipping %s: unavailable", player_id)
@@ -95,24 +96,81 @@ async def async_broadcast(
             _schedule_volume_restore(hass, player_id, old_volume, content_id, config)
 
     played.extend(
-        await _announce_satellites(hass, config, content_id)
+        await _announce_satellites(hass, config, content_id, satellite_ids)
     )
 
     return played
+
+
+def _resolve_targets(
+    hass: HomeAssistant,
+    config: dict[str, Any],
+    explicit: list[str] | None,
+) -> tuple[list[str], list[str]]:
+    """Combine the configured media-player and satellite lists.
+
+    The two lists form ONE target set: if anything is listed anywhere,
+    only the listed entities receive the broadcast. Only when both are
+    empty does "everything" mean all media players and all satellites.
+
+    A device that exists as both a media player and a satellite (e.g.
+    ESPHome) plays once: the satellite route wins, the media-player
+    route for that device is skipped.
+    """
+    if explicit:
+        player_ids = [
+            entity_id for entity_id in explicit
+            if entity_id.startswith("media_player.")
+        ]
+        satellite_ids = [
+            entity_id for entity_id in explicit
+            if entity_id.startswith(SATELLITE_DOMAIN + ".")
+        ]
+    else:
+        player_ids = list(config.get(CONF_TARGETS) or [])
+        satellite_ids = list(config.get(CONF_SATELLITES) or [])
+        if not player_ids and not satellite_ids:
+            player_ids = hass.states.async_entity_ids("media_player")
+            satellite_ids = hass.states.async_entity_ids(SATELLITE_DOMAIN)
+
+    if not player_ids or not satellite_ids:
+        return player_ids, satellite_ids
+
+    registry = er_helper.async_get(hass)
+    device_players: dict[str, list[str]] = {}
+    for player_id in player_ids:
+        entity = registry.async_get(player_id)
+        if entity and entity.device_id:
+            device_players.setdefault(entity.device_id, []).append(player_id)
+    if not device_players:
+        return player_ids, satellite_ids
+
+    covered_devices = {
+        entity.device_id
+        for satellite_id in satellite_ids
+        if (entity := registry.async_get(satellite_id)) and entity.device_id
+        and entity.device_id in device_players
+    }
+    kept_players: list[str] = []
+    for player_id in player_ids:
+        entity = registry.async_get(player_id)
+        if entity and entity.device_id in covered_devices:
+            # same physical device: the satellite route plays it once
+            continue
+        kept_players.append(player_id)
+    return kept_players, satellite_ids
 
 
 async def _announce_satellites(
     hass: HomeAssistant,
     config: dict[str, Any],
     content_id: str,
+    satellite_ids: list[str],
 ) -> list[str]:
     """Announce the recording on voice satellites via assist_satellite.announce."""
-    if not hass.services.has_service(SATELLITE_DOMAIN, "announce"):
+    if not satellite_ids or not hass.services.has_service(SATELLITE_DOMAIN, "announce"):
         return []
 
-    satellite_ids = config.get(CONF_SATELLITES) or hass.states.async_entity_ids(
-        SATELLITE_DOMAIN
-    )
     played: list[str] = []
     for satellite_id in satellite_ids:
         state = hass.states.get(satellite_id)
