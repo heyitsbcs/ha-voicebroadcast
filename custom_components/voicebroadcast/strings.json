@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Voice Broadcast",
-        "description": "Say \"broadcast <message>\" to Assist and hear your own voice on the speakers you choose. The two target lists together define where broadcasts go: list only the devices you want (mix of media players and satellites); when BOTH are empty, every device receives the broadcast. All other voice commands pass through unchanged.",
+        "description": "Say \"broadcast <message>\" to Assist and hear your own voice on the speakers you choose. Only the devices you list in the two target lists receive broadcasts; an empty list means none of that kind. All other voice commands pass through unchanged.",
         "data": {
           "upstream": "Upstream speech-to-text engine",
           "keyword": "Trigger word",
@@ -12,8 +12,8 @@
           "auto_broadcast": "Broadcast automatically when a recording is made",
           "agent": "Assistant for normal commands (everything that is not a broadcast)",
           "confirm": "Confirmation spoken on the source satellite (empty = silent)",
-          "targets": "Media player targets (leave both target lists empty = all devices)",
-          "satellites": "Voice satellite targets (leave both target lists empty = all devices)",
+          "targets": "Media player targets (empty = no media players)",
+          "satellites": "Voice satellite targets (empty = no satellites)",
           "preannounce": "Play the satellite chime before the announcement",
           "duck_volume": "Duck volume during broadcast (0-1)",
           "max_duration": "Max recording duration in seconds",
@@ -38,8 +38,8 @@
             "auto_broadcast": "Broadcast automatically when a recording is made",
             "agent": "Assistant for normal commands (everything that is not a broadcast)",
             "confirm": "Confirmation spoken on the source satellite (empty = silent)",
-            "targets": "Media player targets (leave both target lists empty = all devices)",
-            "satellites": "Voice satellite targets (leave both target lists empty = all devices)",
+            "targets": "Media player targets (empty = no media players)",
+            "satellites": "Voice satellite targets (empty = no satellites)",
             "preannounce": "Play the satellite chime before the announcement",
             "duck_volume": "Duck volume during broadcast (0-1)",
             "max_duration": "Max recording duration in seconds",

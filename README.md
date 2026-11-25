@@ -80,15 +80,11 @@ existing HA APIs.
    - **Broadcast automatically** — play new recordings immediately
      (recommended).
    - **Broadcast targets** and **Voice satellites** — these two lists
-     together define where broadcasts go:
-
-     - list the media players and/or satellites you want —
-       **only the listed devices** receive the broadcast;
-     - leave **both** empty — every media player and satellite in
-       your house receives it.
-
-     A device that exists as both (e.g. ESPHome) plays only once, via
-     the satellite route.
+     together define where broadcasts go: **only the listed devices**
+     receive them. An empty list means no devices of that kind, and if
+     both are empty the recording is saved but played nowhere (a
+     warning is logged). A device that exists in both lists (e.g.
+     ESPHome) plays only once, via the satellite route.
    - **Confirmation** — the short phrase spoken on the source satellite
      after a broadcast (default `Sent.`; leave empty for silence).
    - **Chime before satellite announcement** — play the satellite's

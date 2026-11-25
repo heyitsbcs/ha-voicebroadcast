@@ -46,9 +46,10 @@ async def async_broadcast(
     native announcement with the recording as media_id, optionally
     preceded by their chime.
 
-    `entity_ids` (mixed media_player.* / assist_satellite.*) override
-    the configured lists; a device that exists in both domains plays
-    only once.
+    Only explicitly listed devices (or devices from the configured
+    target lists) receive the broadcast. `entity_ids` (mixed
+    media_player.* / assist_satellite.*) override the configured lists;
+    a device that exists in both domains plays only once.
     """
     if media_source_id:
         content_id = media_source_id
@@ -58,6 +59,13 @@ async def async_broadcast(
         return []
 
     player_ids, satellite_ids = _resolve_targets(hass, config, entity_ids)
+    if not player_ids and not satellite_ids:
+        _LOGGER.warning(
+            "Broadcast has no targets (nothing is listed in the media "
+            "player or satellite target lists); the recording was not "
+            "played anywhere"
+        )
+        return []
 
     played: list[str] = []
     for player_id in player_ids:
@@ -109,9 +117,8 @@ def _resolve_targets(
 ) -> tuple[list[str], list[str]]:
     """Combine the configured media-player and satellite lists.
 
-    The two lists form ONE target set: if anything is listed anywhere,
-    only the listed entities receive the broadcast. Only when both are
-    empty does "everything" mean all media players and all satellites.
+    The two lists form ONE target set: only the listed entities receive
+    the broadcast; an empty list means no devices of that kind.
 
     A device that exists as both a media player and a satellite (e.g.
     ESPHome) plays once: the satellite route wins, the media-player
@@ -129,9 +136,6 @@ def _resolve_targets(
     else:
         player_ids = list(config.get(CONF_TARGETS) or [])
         satellite_ids = list(config.get(CONF_SATELLITES) or [])
-        if not player_ids and not satellite_ids:
-            player_ids = hass.states.async_entity_ids("media_player")
-            satellite_ids = hass.states.async_entity_ids(SATELLITE_DOMAIN)
 
     if not player_ids or not satellite_ids:
         return player_ids, satellite_ids
