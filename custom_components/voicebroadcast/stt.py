@@ -21,7 +21,6 @@ from typing import Any
 from homeassistant.components import stt
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import recorder
@@ -177,8 +176,17 @@ async def async_setup_entry(
 ) -> None:
     """Set up the STT router."""
     config = hass.data[DOMAIN][entry.entry_id]
+    # Do not block the config entry on the upstream engine being ready:
+    # right after a restart (e.g. after an upgrade) this integration can
+    # be set up before the upstream STT entity exists, and raising
+    # ConfigEntryNotReady here dropped the STT component on every
+    # upgrade. The upstream is resolved per utterance instead
+    # (async_process_audio_stream), which handles a missing engine.
     if stt.async_get_speech_to_text_entity(hass, config[CONF_UPSTREAM]) is None:
-        raise ConfigEntryNotReady(
-            f"Upstream STT entity {config[CONF_UPSTREAM]} is not set up yet"
+        _LOGGER.warning(
+            "Upstream STT entity %s is not available yet; the Voice "
+            "Broadcast STT will work once it is. If this persists, check",
+            "the configured upstream speech-to-text engine.",
+            config[CONF_UPSTREAM],
         )
     async_add_entities([VoiceBroadcastSTT(hass, config)])
