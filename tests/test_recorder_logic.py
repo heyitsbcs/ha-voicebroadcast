@@ -100,11 +100,37 @@ def main() -> None:
     assert dur2 < recorder.MIN_MESSAGE_SECONDS
     print(f"keyword-only: {dur2:.3f}s -> discarded (min {recorder.MIN_MESSAGE_SECONDS}s)")
 
-    # continuous tone, no gap anywhere -> local-min/fallback cut
+    # continuous tone, no gap anywhere -> assumed-word-end cut
     pcm3 = tone(440, 2.7)
     cut3_s = recorder.find_cut_offset(pcm3, SR) / SR / 2
-    assert cut3_s == recorder._FALLBACK_CUT_S, f"fallback at {cut3_s:.3f}s"
-    print(f"no-pause fallback: cut at {cut3_s:.3f}s")
+    assert cut3_s == recorder._ASSUMED_WORD_S, f"assumed-word-end cut at {cut3_s:.3f}s"
+    print(f"no-gap assumed word end: cut at {cut3_s:.3f}s")
+
+    # syllable gap inside the keyword must NOT be the cut point:
+    # "broad" (0.45s) + gap (40ms) + "cast" (0.35s) + pause (120ms) + message
+    pcm6 = tone(440, 0.45) + silence(0.04) + tone(440, 0.35) + silence(0.12) + tone(660, 2.0)
+    cut6_s = recorder.find_cut_offset(pcm6, SR) / SR / 2
+    assert 0.78 <= cut6_s <= 0.90, f"syllable-gap cut at {cut6_s:.3f}s (real pause at 0.84s)"
+    print(f"syllable gap ignored: cut at {cut6_s:.3f}s (word ends at 0.840s)")
+
+    # lead-in before the word, no gap after it: cut must land past the word
+    # (0.3s lead-in + 0.6s word -> word ends at 0.9s)
+    pcm7 = silence(0.3) + tone(440, 0.6) + tone(660, 2.0)
+    cut7_s = recorder.find_cut_offset(pcm7, SR) / SR / 2
+    assert 1.3 <= cut7_s <= 1.5 and cut7_s > 0.9, f"lead-in no-gap cut at {cut7_s:.3f}s"
+    print(f"lead-in, no gap: cut at {cut7_s:.3f}s (word ends at 0.900s)")
+
+    # enhancer-style raised noise floor: edge trim must still work
+    pcm8 = tone(660, 0.5, vol=0.05) + tone(660, 1.5, vol=0.5) + tone(660, 0.5, vol=0.05)
+    dur8 = len(recorder.trim_message(pcm8, SR)) / SR / 2
+    assert dur8 < 2.1, f"noise-floor trim left {dur8:.2f}s of a 2.5s clip"
+    print(f"noise-floor trim: {dur8:.2f}s kept from 2.5s (voice is 1.5s)")
+
+    # plain silence edges still trim to the natural margins
+    pcm9 = silence(0.4) + tone(660, 2.0) + silence(0.5)
+    dur9 = len(recorder.trim_message(pcm9, SR)) / SR / 2
+    assert 2.25 <= dur9 <= 2.45, f"silence trim left {dur9:.2f}s (expect ~2.37s)"
+    print(f"silence trim: {dur9:.2f}s kept from 2.9s (voice is 2.0s)")
 
     # very short 40 ms gap right after the keyword -> cut at the gap
     pcm4 = tone(440, 0.7) + silence(0.04) + tone(660, 2.0)

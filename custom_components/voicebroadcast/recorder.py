@@ -1,12 +1,14 @@
 """Record, trim, and manage voice broadcast recordings.
-
 The pipeline hands us a stream of 16-bit mono PCM (the pipeline's VAD
 already trims the stream to the spoken command). The upstream STT engine
 only returns text without word timestamps, so the leading trigger word is
-stripped with a small energy detector: the first significant dip after a
-minimum lead-in marks the end of the keyword. If the speaker leaves no
-gap at all, the quietest window shortly after the keyword is used
-instead.
+stripped with a small energy detector: the word's start is located from the
+first sustained voiced run (the stream can carry a short lead-in), and the
+first real pause after the word marks where the message starts. Short dips
+are the gaps *inside* the keyword ("broad|cast") and are ignored. If the
+speaker leaves no gap at all, the keyword is assumed to end 1.1 s after it
+started. Leading/trailing silence is trimmed against an adaptive noise
+floor so the pipeline's audio enhancer cannot defeat the trim.
 """
 
 from __future__ import annotations
@@ -31,17 +33,20 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _WINDOW_MS = 10
-_SILENCE_RUN = 3  # consecutive low-energy windows (30 ms) end the keyword
-_MIN_CUT_MS = 400  # never cut inside the first 400 ms (mid-syllable)
-_MAX_SCAN_S = 3.0
+_SILENCE_RUN = 3  # consecutive low-energy windows (30 ms) mark a boundary
+_VOICE_RUN = 5  # consecutive voiced windows (50 ms) mark the word's start
+_SPEECH_SEARCH_S = 3.0  # the word starts within the first 3 s
 _GATE_RATIO = 0.30  # a dip below 30% of the loudest window is a boundary
-_LOCAL_MIN_MIN_MS = 400  # fallback: quietest window in this span...
-_LOCAL_MIN_MAX_MS = 1500
-_LOCAL_MIN_RATIO = 0.60  # ...below 60% of the peak
-_FALLBACK_CUT_S = 0.75
+_PEAK_WINDOW_S = 2.0  # calibrate the gate on the keyword, not the message
+_WORD_MIN_MS = 600  # ignore dips within 600 ms of the word (syllable gaps)
+_DIP_SEARCH_S = 2.0  # the word-end gap is within 2 s of the word's start
+_ASSUMED_WORD_S = 1.1  # no detectable gap: the keyword runs this long
 _KEEP_LEADING_MS = 120
 _KEEP_TRAILING_MS = 250
 _ABS_GATE = 80  # RMS floor below which audio is considered silence
+_NOISE_PERCENTILE = 30  # low-energy windows estimate the noise floor
+_NOISE_MARGIN = 2.5
+_TRIM_PEAK_RATIO = 0.10
 
 
 @dataclass(frozen=True)
@@ -94,9 +99,30 @@ def _energy_profile(pcm: bytes, sample_rate: int) -> list[float]:
     return profile
 
 
-def _gate(profile: list[float]) -> float:
-    return max(_ABS_GATE, max(profile) * 0.08)
+def _trim_gate(profile: list[float]) -> float:
+    """Silence gate for edge trimming, adapted to the noise floor.
+    The pipeline's audio enhancer leaves a raised noise floor (often
+    10-25% of the loudest window), so a pure peak-relative gate would
+    never trim anything. Estimate the floor from the low-energy windows.
+    """
+    ordered = sorted(profile)
+    noise = ordered[max(0, int(len(ordered) * _NOISE_PERCENTILE / 100) - 1)]
+    return max(_ABS_GATE, noise * _NOISE_MARGIN, max(profile) * _TRIM_PEAK_RATIO)
 
+
+def _find_speech_start(profile: list[float], gate: float) -> int:
+    """Return the index of the first sustained voiced run (the word's start)."""
+    limit = min(int(_SPEECH_SEARCH_S * (1000 // _WINDOW_MS)), len(profile))
+    run = 0
+    for i in range(limit):
+        if profile[i] >= gate:
+            run += 1
+            if run >= _VOICE_RUN:
+                return i - run + 1
+        else:
+            run = 0
+    # No sustained run found; anchor on the loudest window.
+    return profile.index(max(profile))
 
 def find_cut_offset(pcm: bytes, sample_rate: int) -> int:
     """Return the byte offset just after the leading trigger word."""
@@ -105,13 +131,28 @@ def find_cut_offset(pcm: bytes, sample_rate: int) -> int:
     profile = _energy_profile(pcm, sample_rate)
     if not profile or max(profile) < _ABS_GATE:
         return 0
-    peak = max(profile)
+    # Calibrate the gate on the keyword region: the message that follows
+    # can be much louder and would push the gate above the keyword's
+    # own energy.
+    peak_windows = max(1, int(_PEAK_WINDOW_S * (1000 // _WINDOW_MS)))
+    peak = max(profile[:peak_windows])
     gate = max(_ABS_GATE, peak * _GATE_RATIO)
     windows_per_second = 1000 // _WINDOW_MS
-    min_index = int(_MIN_CUT_MS / _WINDOW_MS)
-    max_index = int(min(_MAX_SCAN_S, len(pcm) / SAMPLE_WIDTH / sample_rate) * windows_per_second)
+
+    # Where does the word actually start? The stream can carry a short
+    # lead-in (breath, wake-word residue, an untranscribed filler), so all
+    # offsets below are relative to the detected speech start, not t=0.
+    speech_start = _find_speech_start(profile, gate)
+
+    # First real pause after at least _WORD_MIN_MS of voiced word: shorter
+    # dips are the gaps *inside* the keyword (e.g. "broad|cast").
+    min_index = speech_start + int(_WORD_MIN_MS / _WINDOW_MS)
+    max_index = min(
+        speech_start + int(_DIP_SEARCH_S * windows_per_second),
+        len(profile),
+    )
     run = 0
-    for i in range(min_index, min(max_index, len(profile))):
+    for i in range(min_index, max_index):
         if profile[i] < gate:
             run += 1
             if run >= _SILENCE_RUN:
@@ -120,15 +161,10 @@ def find_cut_offset(pcm: bytes, sample_rate: int) -> int:
         else:
             run = 0
 
-    # No clear gap: cut at the quietest window shortly after the keyword.
-    lo = int(_LOCAL_MIN_MIN_MS / _WINDOW_MS)
-    hi = min(int(_LOCAL_MIN_MAX_MS / _WINDOW_MS), len(profile))
-    if hi > lo:
-        best = lo + min(range(hi - lo), key=lambda i: profile[i])
-        if profile[best] < peak * _LOCAL_MIN_RATIO:
-            cut_seconds = best * _WINDOW_MS / 1000
-            return int(cut_seconds * sample_rate) * SAMPLE_WIDTH
-    return int(_FALLBACK_CUT_S * sample_rate) * SAMPLE_WIDTH
+    # No detectable gap: assume the keyword ends _ASSUMED_WORD_S after it
+    # started (covers slow, careful enunciation).
+    cut_seconds = speech_start / windows_per_second + _ASSUMED_WORD_S
+    return int(cut_seconds * sample_rate) * SAMPLE_WIDTH
 
 
 def trim_message(pcm: bytes, sample_rate: int) -> bytes:
@@ -138,7 +174,7 @@ def trim_message(pcm: bytes, sample_rate: int) -> bytes:
     profile = _energy_profile(pcm, sample_rate)
     if not profile:
         return b""
-    gate = _gate(profile)
+    gate = _trim_gate(profile)
     voice = [i for i, rms in enumerate(profile) if rms >= gate]
     if not voice:
         return b""
