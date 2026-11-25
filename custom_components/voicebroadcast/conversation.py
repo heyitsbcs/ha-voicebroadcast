@@ -4,8 +4,9 @@ This agent is selected as the pipeline's conversation agent. Utterances
 that start with the trigger word get a short spoken confirmation (by
 default "Sent." — set an empty confirmation to stay fully silent) so
 no long robot reply is spoken; everything else is delegated to the
-built-in Home Assistant agent, which keeps all normal voice commands
-working exactly as before.
+configured pass-through assistant (by default the built-in Home
+Assistant agent, e.g. your LLM agent), which keeps all normal voice
+commands working exactly as before.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from homeassistant.helpers import intent
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import recorder
-from .const import CONF_CONFIRM, DOMAIN
+from .const import CONF_AGENT, CONF_CONFIRM, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,7 +73,10 @@ class VoiceBroadcastAgent(conversation.ConversationEntity):
             conversation_id=user_input.conversation_id,
             context=user_input.context,
             language=user_input.language,
-            # agent_id=None -> the built-in Home Assistant agent
+            # agent_id=None -> the built-in Home Assistant agent; the
+            # configured pass-through assistant (e.g. an LLM agent)
+            # otherwise keeps handling normal voice commands
+            agent_id=self.config.get(CONF_AGENT) or None,
             device_id=user_input.device_id,
             satellite_id=user_input.satellite_id,
             extra_system_prompt=user_input.extra_system_prompt,

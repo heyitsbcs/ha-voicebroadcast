@@ -39,6 +39,7 @@ from . import broadcast as broadcast_helper
 from . import recorder
 from .const import (
     CONF_ALIASES,
+    CONF_AGENT,
     CONF_AUTO_BROADCAST,
     CONF_CONFIRM,
     CONF_DUCK_VOLUME,
@@ -106,13 +107,15 @@ class BroadcastMediaView(HomeAssistantView):
 
 
 def entry_config(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
-    """Merge entry data with defaults and derive paths."""
+    """Merge entry data (and options) with defaults and derive paths."""
     data = dict(entry.data)
+    data.update(entry.options or {})
     config: dict[str, Any] = {
         CONF_UPSTREAM: data[CONF_UPSTREAM],
         CONF_KEYWORD: data.get(CONF_KEYWORD, DEFAULT_KEYWORD),
         CONF_ALIASES: data.get(CONF_ALIASES, []),
         CONF_OUTPUT_DIR: str(Path(hass.config.path(data.get(CONF_OUTPUT_DIR, DEFAULT_OUTPUT_DIR)))),
+        CONF_AGENT: data.get(CONF_AGENT),
         CONF_AUTO_BROADCAST: data.get(CONF_AUTO_BROADCAST, DEFAULT_AUTO_BROADCAST),
         CONF_TARGETS: data.get(CONF_TARGETS, []),
         CONF_CONFIRM: data.get(CONF_CONFIRM, DEFAULT_CONFIRM),
@@ -140,7 +143,19 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Voice Broadcast from a config entry."""
     config = entry_config(hass, entry)
+    # async_setup is not re-run on reload, so make sure the bucket exists
+    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = config
+
+    # Reload the entry when its options change so new settings (pass-through
+    # assistant, targets, ...) take effect immediately.
+    entry.async_on_unload(
+        entry.add_update_listener(
+            lambda _hass, updated_entry: hass.config_entries.async_reload(
+                updated_entry.entry_id
+            )
+        )
+    )
 
     if not any(cfg.get("view_registered") for cfg in hass.data[DOMAIN].values()):
         hass.http.register_view(BroadcastMediaView(hass))

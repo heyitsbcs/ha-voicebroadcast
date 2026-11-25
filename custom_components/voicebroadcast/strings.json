@@ -10,6 +10,7 @@
           "aliases": "Extra trigger words (comma separated)",
           "output_dir": "Recording folder (relative to the config directory, or absolute)",
           "auto_broadcast": "Broadcast automatically when a recording is made",
+          "agent": "Assistant for normal commands (everything that is not a broadcast)",
           "confirm": "Confirmation spoken on the source satellite (empty = silent)",
           "targets": "Broadcast targets (empty = all media players)",
           "satellites": "Voice satellites to announce on (empty = all)",
@@ -23,6 +24,30 @@
     },
     "error": {
       "upstream_not_found": "The selected speech-to-text entity does not exist or is not set up."
+    },
+    "options": {
+      "step": {
+        "init": {
+          "title": "Voice Broadcast",
+          "description": "Edit the Voice Broadcast settings.",
+          "data": {
+            "upstream": "Upstream speech-to-text engine",
+            "keyword": "Trigger word",
+            "aliases": "Extra trigger words (comma separated)",
+            "output_dir": "Recording folder (relative to the config directory, or absolute)",
+            "auto_broadcast": "Broadcast automatically when a recording is made",
+            "agent": "Assistant for normal commands (everything that is not a broadcast)",
+            "confirm": "Confirmation spoken on the source satellite (empty = silent)",
+            "targets": "Broadcast targets (empty = all media players)",
+            "satellites": "Voice satellites to announce on (empty = all)",
+            "preannounce": "Play the satellite chime before the announcement",
+            "duck_volume": "Duck volume during broadcast (0-1)",
+            "max_duration": "Max recording duration in seconds",
+            "keep_hours": "Delete recordings older than (hours)",
+            "languages": "Languages (comma separated)"
+          }
+        }
+      }
     }
   }
 }

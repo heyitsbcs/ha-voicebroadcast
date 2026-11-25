@@ -70,6 +70,11 @@ existing HA APIs.
    - **Trigger word** — default `broadcast`. Say it as the *first word*
      after the wake word.
    - **Extra trigger words** — optional comma-separated aliases.
+   - **Assistant** — the agent that handles *normal* voice commands
+     (everything that is not a broadcast). Select your usual
+     assistant here (e.g. your LLM agent) so normal commands behave
+     exactly as before. Leave empty for the built-in Home Assistant
+     agent.
    - **Recording folder** — where WAVs are stored (default
      `voicebroadcast` under the config directory).
    - **Broadcast automatically** — play new recordings immediately
@@ -99,7 +104,12 @@ existing HA APIs.
    TTS reply instead of just "Sent.".
 
 That's it. Every device on that pipeline now supports broadcasts; all
-other commands behave exactly as before.
+other commands behave exactly as before — they go to the assistant you
+selected, not to a different one.
+
+All settings can be changed later under
+**Settings → Devices & Services → Voice Broadcast → Configure**; the
+integration reloads itself and picks up changes immediately.
 
 ## Usage
 
