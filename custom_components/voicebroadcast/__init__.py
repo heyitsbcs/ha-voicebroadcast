@@ -8,11 +8,13 @@ The integration ships:
 - a transparent STT router (the pipeline's STT engine). It forwards every
   utterance to the upstream STT engine and passes the transcript through
   unchanged. When the first word of the transcript is the trigger word, it
-  also saves the utterance audio (minus the trigger word) as a WAV file,
-  fires ``voicebroadcast.recorded`` and, optionally, broadcasts it.
+  saves the utterance audio (minus the trigger word) as a WAV file and
+  fires ``voicebroadcast.recorded``.
 - a conversation agent that answers trigger-word utterances with a short
-  confirmation (default "Sent.") instead of a long robot reply, and
-  delegates everything else to the default agent.
+  confirmation (default "Sent.") instead of a long robot reply and
+  broadcasts the new recording to the configured targets (the satellite
+  the utterance was spoken on is excluded); everything else is delegated
+  to the pass-through assistant.
 - a media source exposing the recordings, plus ``voicebroadcast.broadcast``
   and ``voicebroadcast.clear`` services.
 """

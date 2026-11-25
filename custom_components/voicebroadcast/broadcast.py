@@ -37,6 +37,7 @@ async def async_broadcast(
     url: str | None = None,
     volume: float | None = None,
     entity_ids: list[str] | None = None,
+    exclude_satellite: str | None = None,
 ) -> list[str]:
     """Play a recording on the configured (or explicitly given) targets.
 
@@ -50,6 +51,10 @@ async def async_broadcast(
     target lists) receive the broadcast. `entity_ids` (mixed
     media_player.* / assist_satellite.*) override the configured lists;
     a device that exists in both domains plays only once.
+
+    `exclude_satellite` (the satellite a spoken broadcast came from) is
+    removed from the targets, together with any media player on the
+    same physical device, so the source never plays its own message.
     """
     if media_source_id:
         content_id = media_source_id
@@ -59,6 +64,10 @@ async def async_broadcast(
         return []
 
     player_ids, satellite_ids = _resolve_targets(hass, config, entity_ids)
+    if exclude_satellite:
+        player_ids, satellite_ids = _exclude_source(
+            hass, player_ids, satellite_ids, exclude_satellite
+        )
     if not player_ids and not satellite_ids:
         _LOGGER.warning(
             "Broadcast has no targets (nothing is listed in the media "
@@ -163,6 +172,37 @@ def _resolve_targets(
             continue
         kept_players.append(player_id)
     return kept_players, satellite_ids
+
+
+def _exclude_source(
+    hass: HomeAssistant,
+    player_ids: list[str],
+    satellite_ids: list[str],
+    source_satellite: str,
+) -> tuple[list[str], list[str]]:
+    """Remove the satellite a broadcast was spoken on from the targets.
+
+    Any media player entity on the same physical device is removed too,
+    so the source device never plays its own recording back.
+    """
+    satellite_ids = [s for s in satellite_ids if s != source_satellite]
+    if not player_ids:
+        return player_ids, satellite_ids
+
+    registry = er_helper.async_get(hass)
+    source_entity = registry.async_get(source_satellite)
+    if source_entity is None or not source_entity.device_id:
+        return player_ids, satellite_ids
+    source_device = source_entity.device_id
+
+    kept: list[str] = []
+    for player_id in player_ids:
+        entity = registry.async_get(player_id)
+        if entity is not None and entity.device_id == source_device:
+            _LOGGER.debug("Excluding source device player %s", player_id)
+            continue
+        kept.append(player_id)
+    return kept, satellite_ids
 
 
 async def _announce_satellites(

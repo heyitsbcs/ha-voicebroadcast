@@ -3,7 +3,10 @@
 This agent is selected as the pipeline's conversation agent. Utterances
 that start with the trigger word get a short spoken confirmation (by
 default "Sent." — set an empty confirmation to stay fully silent) so
-no long robot reply is spoken; everything else is delegated to the
+no long robot reply is spoken, and triggers the broadcast of the
+recording the STT router just saved -- to all configured targets
+EXCEPT the satellite the utterance was spoken on, which never plays
+back its own message. Everything else is delegated to the
 configured pass-through assistant (by default the built-in Home
 Assistant agent, e.g. your LLM agent), which keeps all normal voice
 commands working exactly as before.
@@ -12,6 +15,7 @@ commands working exactly as before.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from homeassistant.components import conversation
@@ -21,7 +25,7 @@ from homeassistant.helpers import intent
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import recorder
-from .const import CONF_AGENT, CONF_CONFIRM, DOMAIN
+from .const import CONF_AGENT, CONF_AUTO_BROADCAST, CONF_CONFIRM, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +57,8 @@ class VoiceBroadcastAgent(conversation.ConversationEntity):
         text = (user_input.text or "").strip()
 
         if text and recorder.is_broadcast(text, self.config["keywords"]):
-            _LOGGER.debug("Broadcast utterance: confirming")
+            _LOGGER.debug("Broadcast utterance: confirming + broadcasting")
+            self._maybe_auto_broadcast(user_input)
             response = intent.IntentResponse(
                 language=user_input.language or "en"
             )
@@ -85,6 +90,48 @@ class VoiceBroadcastAgent(conversation.ConversationEntity):
             response=result.response,
             conversation_id=result.conversation_id,
         )
+
+
+    # The recording is saved by the STT stage of the SAME pipeline run,
+    # which finished before this agent runs; anything older belongs to a
+    # previous utterance (a typed "broadcast ..." has no recording at all).
+    _RECORDING_TTL_S = 10.0
+
+    def _maybe_auto_broadcast(
+        self, user_input: conversation.ConversationInput
+    ) -> None:
+        """Broadcast the fresh recording, excluding the source satellite."""
+        if not self.config.get(CONF_AUTO_BROADCAST, True):
+            return
+        recording = self.config.get("last_recording")
+        if not recording or (
+            time.monotonic() - recording.get("ts", 0) > self._RECORDING_TTL_S
+        ):
+            _LOGGER.debug("No fresh recording available; not broadcasting")
+            return
+        # Fire and forget: delivery failures must never break the pipeline
+        # (the recording itself is already saved and can be replayed via
+        # the voicebroadcast.broadcast service).
+        self.hass.async_create_task(
+            self._async_auto_broadcast(recording, user_input.satellite_id)
+        )
+
+    async def _async_auto_broadcast(
+        self, recording: dict[str, Any], exclude_satellite: str | None
+    ) -> None:
+        """Broadcast the new recording to the configured targets."""
+        from . import broadcast
+
+        try:
+            played = await broadcast.async_broadcast(
+                self.hass,
+                self.config,
+                media_source_id=recording["media_source_id"],
+                exclude_satellite=exclude_satellite,
+            )
+            _LOGGER.info("Broadcast played on: %s", played or "(no players)")
+        except Exception:  # noqa: BLE001 - never break the voice pipeline
+            _LOGGER.exception("Auto-broadcast failed")
 
 
 async def async_setup_entry(

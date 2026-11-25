@@ -4,14 +4,16 @@ Every utterance is forwarded to the configured upstream STT engine and
 the transcript is passed through unchanged, so normal voice commands are
 completely unaffected. When the first word of the transcript is the
 trigger word (default: "broadcast"), the raw audio (minus the trigger
-word) is saved as a WAV recording, an event is fired and the recording is
-optionally broadcast to the configured media players.
+word) is saved as a WAV recording and an event is fired. The conversation
+agent (which knows the speaking satellite) then broadcasts the recording
+to the configured targets, excluding the satellite it was spoken on.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterable, AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -24,7 +26,6 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import recorder
 from .const import (
-    CONF_AUTO_BROADCAST,
     CONF_KEEP_HOURS,
     CONF_MAX_DURATION,
     CONF_OUTPUT_DIR,
@@ -162,23 +163,11 @@ class VoiceBroadcastSTT(stt.SpeechToTextEntity):
                 "media_source_id": f"media-source://{DOMAIN}/{recording.file}",
             }
             self.hass.bus.async_fire(EVENT_RECORDED, data)
-            if self.config[CONF_AUTO_BROADCAST]:
-                self.hass.async_create_task(
-                    self._async_auto_broadcast(data)
-                )
+            # Hand the recording to the conversation agent: it runs later in
+            # the same pipeline run and knows which satellite the utterance
+            # came from, so it can exclude the source from the targets.
+            self.config["last_recording"] = {**data, "ts": time.monotonic()}
         return result
-
-    async def _async_auto_broadcast(self, data: dict[str, Any]) -> None:
-        """Broadcast the new recording to the configured players."""
-        from . import broadcast
-
-        try:
-            played = await broadcast.async_broadcast(
-                self.hass, self.config, media_source_id=data["media_source_id"]
-            )
-            _LOGGER.info("Broadcast played on: %s", played or "(no players)")
-        except Exception:  # noqa: BLE001 - never break the voice pipeline
-            _LOGGER.exception("Auto-broadcast failed")
 
 
 async def async_setup_entry(

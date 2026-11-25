@@ -25,10 +25,10 @@ satellites, ESPHome satellites, the browser Assist panel, etc.
         │                          (everything downstream is normal)
         │                 yes ──► audio saved as WAV (keyword stripped)
         │                          voicebroadcast.recorded event
-        │                          auto-broadcast
         ▼
   Voice Broadcast Assistant (conversation agent)
         ├── "broadcast ..." ─► short confirmation (default "Sent.")
+        │                      auto-broadcast (source satellite excluded)
         └── anything else ───► delegated to the default HA agent
         ▼
   Media players
@@ -167,6 +167,11 @@ browser.
 
 - **Trigger word is first-word only.** "Play the song *Broadcast*" will
   not fire a broadcast; it passes through to your normal STT/agent.
+- **The source is never a target.** The satellite you speak the
+  broadcast from never plays its own message back — not via the
+  satellite route and not via a media player entity on the same
+  device. Manual `voicebroadcast.broadcast` service calls are
+  unaffected (they play everywhere you name).
 - **Latency.** A broadcast is ready when the pipeline's VAD ends your
   sentence; normal commands are unaffected (audio is teed live to your
   STT engine).
