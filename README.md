@@ -93,7 +93,7 @@ existing HA APIs.
      players that don't support native announce (default `0.3`).
    - **Max recording duration** / **Delete recordings older than** —
      sane defaults provided.
-3. Open **Settings → Voice & Talk → Assist pipeline** (the one your
+3. Open **Settings → Voice assistants → Assist pipeline** (the one your
    satellite uses):
    - **Speech-to-text**: select **Voice Broadcast**
    - **Assistant** (agent): select **Voice Broadcast Assistant**
